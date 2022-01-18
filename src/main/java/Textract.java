@@ -8,9 +8,54 @@ import software.amazon.awssdk.services.textract.TextractClient;
 import software.amazon.awssdk.services.textract.model.*;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Textract {
+
+    public static Map<String, String> getKeyValue(Map<String, Block> blockMap, Map<String, Block> keyMap, Map<String, Block> valueMap){
+        Map<String,String> result = new LinkedHashMap<>();
+
+        for(Map.Entry<String,Block> itr: keyMap.entrySet())
+        {
+            Block value = getValueBlock(itr.getValue(),valueMap);
+            Block key = itr.getValue();
+            String valueWord = getWord(value,blockMap);
+            String keyWord = getWord(key,blockMap);
+            result.put(keyWord,valueWord);
+        }
+        return result;
+    }
+
+    public static Block getValueBlock(Block key, Map<String,Block> valueMap){
+        Block valueBlock = null;
+        for(Relationship relationship : key.relationships()){
+            if(relationship.typeAsString().equals("VALUE")){
+                for(String id : relationship.ids())
+                {
+                    valueBlock = valueMap.get(id);
+                }
+            }
+        }
+        return valueBlock;
+    }
+
+    public static String getWord(Block block, Map<String, Block> blockMap){
+        StringBuilder s = new StringBuilder();
+        for(Relationship relationship : block.relationships()){
+            if(relationship.typeAsString().equals("CHILD")){
+                for(String id : relationship.ids()){
+                    Block b = blockMap.get(id);
+                    if(b.blockTypeAsString().equals("WORD"))
+                    {
+                        s.append(b.text()).append(" ");
+                    }
+                }
+            }
+        }
+        return s.toString();
+    }
     public static void main(String[] args) {
         AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
         S3Object s3Object = s3Client.getObject("zhaozhiwei","Sample-Filled-PF-Form.jpg"); // get object from s3 bucket
@@ -28,13 +73,32 @@ public class Textract {
         AnalyzeDocumentResponse analyzeDocumentResponse = textractClient.analyzeDocument(analyzeDocumentRequest);
         List<Block> blocks = analyzeDocumentResponse.blocks();
 
+        // create maps for storing key value strings
+        Map<String,Block> blockMap = new LinkedHashMap<>();
+        Map<String,Block> keyMap = new LinkedHashMap<>();
+        Map<String,Block> valueMap = new LinkedHashMap<>();
+
         for(Block b: blocks)
         {
-            System.out.println(b.toString());
+            String block_id = b.id();
+            blockMap.put(block_id,b);
+            if(b.blockTypeAsString().equals("KEY_VALUE_SET"))
+            {
+                for(EntityType entityType: b.entityTypes())
+                {
+                    if(entityType.toString().equals("KEY"))
+                    {
+                        keyMap.put(block_id, b);
+                    }
+                    else
+                    {
+                        valueMap.put(block_id, b);
+                    }
+                }
+            }
         }
-
-
-
+        System.out.println(getKeyValue(blockMap, keyMap, valueMap));
+        textractClient.close();
 
     }
 }
